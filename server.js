@@ -9,9 +9,15 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
-cors({
-  origin: ["http://localhost:5173", "https://safenote-frontend.vercel.app"],
-}); // Allow frontend requests from Vite dev server
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://safenote-frontend.vercel.app",
+      "https://safenote.xyz",
+    ],
+  })
+);
 
 // Connect to MongoDB
 mongoose
