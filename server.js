@@ -17,6 +17,9 @@ app.use(
       "https://safenote.xyz",
       "https://www.safenote.xyz",
     ],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
 
