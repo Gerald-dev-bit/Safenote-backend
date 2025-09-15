@@ -2,10 +2,11 @@ const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
+const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const notesRouter = require("./routes/notes");
+const { ipKeyGenerator } = require("express-rate-limit/utils");
 
 dotenv.config();
 
@@ -68,7 +69,9 @@ app.use("/api/notes/:oldId/rename", generalLimiter);
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
     try {
-      await mongoose.connect(process.env.MONGO_URI);
+      await mongoose.connect(process.env.MONGO_URI, {
+        serverSelectionTimeoutMS: 5000,
+      });
       console.log("MongoDB connected");
       return;
     } catch (err) {
