@@ -21,9 +21,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173",
-      "https://localhost:5173",
       "https://safenote-frontend.vercel.app",
-      "https://safenote.xyz",
       "https://www.safenote.xyz",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
