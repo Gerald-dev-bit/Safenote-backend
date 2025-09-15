@@ -34,24 +34,55 @@ function hashPassword(password) {
 
 router.get("/:noteId", async (req, res) => {
   const token = req.query["cf-turnstile-response"];
-  if (!token || !(await verifyTurnstile(token, req.ip))) {
+  const clientIp = req.headers["cf-connecting-ip"] || req.ip;
+  if (!token || !(await verifyTurnstile(token, clientIp))) {
     return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
-  const note = await Note.findOne({ noteId: req.params.noteId });
-  if (!note) return res.status(404).json({ error: "Note not found" });
-
-  const hasPassword = !!note.password; // Check if password exists
-  if (!hasPassword) {
-    return res.json({ content: note.content || "", hasPassword });
+  let note = await Note.findOne({ noteId: req.params.noteId });
+  if (!note) {
+    note = new Note({ noteId: req.params.noteId, content: "" });
+    await note.save();
   }
 
-  res.json({ hasPassword });
+  const requiresPassword = !!note.password;
+  if (!requiresPassword) {
+    return res.json({ content: note.content || "", requiresPassword });
+  }
+
+  res.json({ requiresPassword });
+});
+
+router.post("/:noteId", async (req, res) => {
+  const token = req.body["cf-turnstile-response"];
+  const clientIp = req.headers["cf-connecting-ip"] || req.ip;
+  if (!token || !(await verifyTurnstile(token, clientIp))) {
+    return res.status(403).json({ error: "Invalid Turnstile token" });
+  }
+
+  let note = await Note.findOne({ noteId: req.params.noteId });
+  if (!note) {
+    note = new Note({ noteId: req.params.noteId });
+  }
+
+  const { content, password } = req.body;
+
+  if (note.password) {
+    if (!password || hashPassword(password) !== note.password) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+  }
+
+  note.content = content || "";
+  await note.save();
+
+  res.json({ message: "Note saved successfully" });
 });
 
 router.post("/:noteId/verify", async (req, res) => {
   const token = req.body["cf-turnstile-response"];
-  if (!token || !(await verifyTurnstile(token, req.ip))) {
+  const clientIp = req.headers["cf-connecting-ip"] || req.ip;
+  if (!token || !(await verifyTurnstile(token, clientIp))) {
     return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
@@ -71,12 +102,16 @@ router.post("/:noteId/verify", async (req, res) => {
 
 router.post("/:noteId/set-password", async (req, res) => {
   const token = req.body["cf-turnstile-response"];
-  if (!token || !(await verifyTurnstile(token, req.ip))) {
+  const clientIp = req.headers["cf-connecting-ip"] || req.ip;
+  if (!token || !(await verifyTurnstile(token, clientIp))) {
     return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
-  const note = await Note.findOne({ noteId: req.params.noteId });
-  if (!note) return res.status(404).json({ error: "Note not found" });
+  let note = await Note.findOne({ noteId: req.params.noteId });
+  if (!note) {
+    note = new Note({ noteId: req.params.noteId });
+    await note.save();
+  }
 
   const { password } = req.body;
   if (!password) return res.status(400).json({ error: "Password required" });
@@ -92,7 +127,8 @@ router.post("/:noteId/set-password", async (req, res) => {
 
 router.post("/:oldId/rename", async (req, res) => {
   const token = req.body["cf-turnstile-response"];
-  if (!token || !(await verifyTurnstile(token, req.ip))) {
+  const clientIp = req.headers["cf-connecting-ip"] || req.ip;
+  if (!token || !(await verifyTurnstile(token, clientIp))) {
     return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
