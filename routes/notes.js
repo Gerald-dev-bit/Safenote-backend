@@ -19,7 +19,7 @@ async function verifyTurnstile(token) {
     }
   );
   const data = await res.json();
-  console.log(`Turnstile response: ${JSON.stringify(data)}`);
+  console.log(`Turnstile verification response: ${JSON.stringify(data)}`);
   return data.success;
 }
 
@@ -29,10 +29,10 @@ function hashPassword(password) {
 
 router.get("/:noteId", async (req, res) => {
   const token = req.query["cf-turnstile-response"];
-  if (!token || !(await verifyTurnstile(token))) {
-    return res.status(403).json({ error: "CAPTCHA validation failed" });
-  }
   try {
+    if (!token || !(await verifyTurnstile(token))) {
+      return res.status(403).json({ error: "CAPTCHA validation failed" });
+    }
     const note = await Note.findOne({ noteId: req.params.noteId });
     if (!note) {
       return res.json({ content: "", requiresPassword: false });
@@ -42,16 +42,16 @@ router.get("/:noteId", async (req, res) => {
       requiresPassword: !!note.password,
     });
   } catch (err) {
-    console.error("Database error:", err);
+    console.error("Error in GET /notes/:noteId:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post("/:noteId", async (req, res) => {
   const { content, password, "cf-turnstile-response": token } = req.body;
-  if (!(await verifyTurnstile(token)))
-    return res.status(403).json({ error: "CAPTCHA validation failed" });
   try {
+    if (!(await verifyTurnstile(token)))
+      return res.status(403).json({ error: "CAPTCHA validation failed" });
     let note = await Note.findOne({ noteId: req.params.noteId });
     if (note) {
       if (note.password && note.password !== hashPassword(password || "")) {
@@ -66,15 +66,16 @@ router.post("/:noteId", async (req, res) => {
       res.json({ message: "created" });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in POST /notes/:noteId:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post("/:noteId/set-password", async (req, res) => {
   const { password, "cf-turnstile-response": token } = req.body;
-  if (!(await verifyTurnstile(token)))
-    return res.status(403).json({ error: "CAPTCHA validation failed" });
   try {
+    if (!(await verifyTurnstile(token)))
+      return res.status(403).json({ error: "CAPTCHA validation failed" });
     const note = await Note.findOne({ noteId: req.params.noteId });
     if (!note) return res.status(404).json({ error: "Note not found" });
     if (note.password)
@@ -83,15 +84,16 @@ router.post("/:noteId/set-password", async (req, res) => {
     await note.save();
     res.json({ message: "Password set" });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in POST /notes/:noteId/set-password:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post("/:noteId/verify", async (req, res) => {
   const { password, "cf-turnstile-response": token } = req.body;
-  if (!(await verifyTurnstile(token)))
-    return res.status(403).json({ error: "CAPTCHA validation failed" });
   try {
+    if (!(await verifyTurnstile(token)))
+      return res.status(403).json({ error: "CAPTCHA validation failed" });
     const note = await Note.findOne({ noteId: req.params.noteId });
     if (!note) return res.status(404).json({ error: "Note not found" });
     if (!note.password) return res.json({ content: note.content });
@@ -102,7 +104,8 @@ router.post("/:noteId/verify", async (req, res) => {
       res.status(401).json({ error: "Invalid password" });
     }
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in POST /notes/:noteId/verify:", err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
