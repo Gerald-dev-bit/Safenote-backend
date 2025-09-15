@@ -2,11 +2,10 @@ const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const cors = require("cors");
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const notesRouter = require("./routes/notes");
-const { ipKeyGenerator } = require("express-rate-limit/utils");
 
 dotenv.config();
 
