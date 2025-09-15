@@ -1,4 +1,3 @@
-//models/Note.js
 const mongoose = require("mongoose");
 
 const noteSchema = new mongoose.Schema({
@@ -8,9 +7,7 @@ const noteSchema = new mongoose.Schema({
 });
 
 noteSchema.pre("save", function (next) {
-  if (this.noteId) {
-    this.noteId = this.noteId.toLowerCase();
-  }
+  if (this.noteId) this.noteId = this.noteId.toLowerCase();
   next();
 });
 

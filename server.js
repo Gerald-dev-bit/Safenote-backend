@@ -1,4 +1,3 @@
-//server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
@@ -12,11 +11,7 @@ dotenv.config();
 
 const app = express();
 app.set("trust proxy", true);
-app.use(
-  helmet({
-    xFrameOptions: { action: "deny" },
-  })
-);
+app.use(helmet({ xFrameOptions: { action: "deny" } }));
 app.use(morgan("combined"));
 app.use(express.json());
 
@@ -27,7 +22,13 @@ const allowedOrigins = [
 ];
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "cf-turnstile-response"],
     credentials: true,
@@ -37,35 +38,33 @@ app.use(
 
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] Received request: ${req.method} ${req.url}`);
-  console.log(`[${timestamp}] Request headers:`, req.headers);
   console.log(
-    `[${timestamp}] CORS Origin: ${req.headers.origin || "undefined"}`
+    `[${timestamp}] Request: ${req.method} ${req.url} from ${
+      req.headers.origin || "undefined"
+    }`
   );
   next();
 });
 
-// Use a custom key generator since ipKeyGenerator is from the utils subpath
 const getClientIp = (req) => req.headers["cf-connecting-ip"] || req.ip;
 
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: "Too many requests from this IP, please try again later.",
+  message: "Too many requests, try later.",
   keyGenerator: (req) => getClientIp(req),
 });
 
 const passwordLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
-  message: "Too many password attempts from this IP, please try again later.",
+  message: "Too many password attempts, try later.",
   keyGenerator: (req) => getClientIp(req),
 });
 
 app.use("/api/notes/:noteId", generalLimiter);
 app.use("/api/notes/:noteId/verify", passwordLimiter);
 app.use("/api/notes/:noteId/set-password", passwordLimiter);
-app.use("/api/notes/:oldId/rename", generalLimiter);
 
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
@@ -76,10 +75,7 @@ const connectDB = async (retries = 5, delayMs = 5000) => {
       console.log("MongoDB connected");
       return;
     } catch (err) {
-      console.error(
-        `MongoDB connection attempt failed (${6 - retries}/5):`,
-        err
-      );
+      console.error(`DB connect fail (${6 - retries}/5):`, err);
       retries--;
       if (retries === 0) process.exit(1);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -88,15 +84,17 @@ const connectDB = async (retries = 5, delayMs = 5000) => {
 };
 connectDB();
 
+app.get("/health", (req, res) => res.status(200).json({ status: "OK" }));
+
 app.use("/api/notes", notesRouter);
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  const isDev = process.env.NODE_ENV === "development";
-  res.status(500).json({ error: isDev ? err.message : "Server error" });
+  res.status(500).json({
+    error:
+      process.env.NODE_ENV === "development" ? err.message : "Server error",
+  });
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`)
-);
+app.listen(PORT, () => console.log(`Server on port ${PORT}`));
