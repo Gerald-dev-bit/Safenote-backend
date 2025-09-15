@@ -6,6 +6,7 @@ const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const notesRouter = require("./routes/notes");
+const { ipKeyGenerator } = require("express-rate-limit/utils");
 
 dotenv.config();
 
@@ -48,13 +49,16 @@ const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: "Too many requests from this IP, please try again later.",
-  keyGenerator: (req) => req.headers["cf-connecting-ip"] || req.ip,
+  keyGenerator: (req) =>
+    ipKeyGenerator(req.headers["cf-connecting-ip"] || req.ip),
 });
+
 const passwordLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many password attempts from this IP, please try again later.",
-  keyGenerator: (req) => req.headers["cf-connecting-ip"] || req.ip,
+  keyGenerator: (req) =>
+    ipKeyGenerator(req.headers["cf-connecting-ip"] || req.ip),
 });
 
 app.use("/api/notes/:noteId", generalLimiter);
@@ -65,10 +69,7 @@ app.use("/api/notes/:oldId/rename", generalLimiter);
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
     try {
-      await mongoose.connect(process.env.MONGO_URI, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-      });
+      await mongoose.connect(process.env.MONGO_URI);
       console.log("MongoDB connected");
       return;
     } catch (err) {
