@@ -6,7 +6,6 @@ const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const notesRouter = require("./routes/notes");
-const { ipKeyGenerator } = require("express-rate-limit/utils");
 
 dotenv.config();
 
@@ -45,20 +44,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// Use a custom key generator since ipKeyGenerator is from the utils subpath
+const getClientIp = (req) => req.headers["cf-connecting-ip"] || req.ip;
+
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: "Too many requests from this IP, please try again later.",
-  keyGenerator: (req) =>
-    ipKeyGenerator(req.headers["cf-connecting-ip"] || req.ip),
+  keyGenerator: (req) => getClientIp(req),
 });
 
 const passwordLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many password attempts from this IP, please try again later.",
-  keyGenerator: (req) =>
-    ipKeyGenerator(req.headers["cf-connecting-ip"] || req.ip),
+  keyGenerator: (req) => getClientIp(req),
 });
 
 app.use("/api/notes/:noteId", generalLimiter);
