@@ -41,36 +41,73 @@ router.get("/:noteId", async (req, res) => {
   const note = await Note.findOne({ noteId: req.params.noteId });
   if (!note) return res.status(404).json({ error: "Note not found" });
 
-  const hasPassword = !!note.hashedPassword;
+  const hasPassword = !!note.password; // Check if password exists
   if (!hasPassword) {
-    const content = note.content;
-    delete notes[req.params.noteId];
-    return res.json({ content, hasPassword });
+    return res.json({ content: note.content || "", hasPassword });
   }
 
   res.json({ hasPassword });
 });
 
-router.post("/api/notes/:noteId/verify", async (req, res) => {
+router.post("/:noteId/verify", async (req, res) => {
   const token = req.body["cf-turnstile-response"];
   if (!token || !(await verifyTurnstile(token, req.ip))) {
     return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
-  const note = notes[req.params.noteId];
+  const note = await Note.findOne({ noteId: req.params.noteId });
   if (!note) return res.status(404).json({ error: "Note not found" });
 
   const { password } = req.body;
-  const hashed = crypto.createHash("sha256").update(password).digest("hex");
-  if (hashed !== note.hashedPassword) {
+  if (!password) return res.status(400).json({ error: "Password required" });
+
+  const hashed = hashPassword(password);
+  if (hashed !== note.password) {
     return res.status(401).json({ error: "Invalid password" });
   }
 
-  // Self-destruct after successful verify
-  const content = note.content;
-  delete notes[req.params.noteId];
-  res.json({ content });
+  res.json({ content: note.content || "" });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+router.post("/:noteId/set-password", async (req, res) => {
+  const token = req.body["cf-turnstile-response"];
+  if (!token || !(await verifyTurnstile(token, req.ip))) {
+    return res.status(403).json({ error: "Invalid Turnstile token" });
+  }
+
+  const note = await Note.findOne({ noteId: req.params.noteId });
+  if (!note) return res.status(404).json({ error: "Note not found" });
+
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: "Password required" });
+
+  if (note.password) {
+    return res.status(400).json({ error: "Password already set" });
+  }
+
+  note.password = hashPassword(password);
+  await note.save();
+  res.status(200).json({ message: "Password set successfully" });
+});
+
+router.post("/:oldId/rename", async (req, res) => {
+  const token = req.body["cf-turnstile-response"];
+  if (!token || !(await verifyTurnstile(token, req.ip))) {
+    return res.status(403).json({ error: "Invalid Turnstile token" });
+  }
+
+  const { newId } = req.body;
+  if (!newId) return res.status(400).json({ error: "New ID is required" });
+
+  const oldNote = await Note.findOne({ noteId: req.params.oldId });
+  if (!oldNote) return res.status(404).json({ error: "Note not found" });
+
+  const existingNote = await Note.findOne({ noteId: newId });
+  if (existingNote) return res.status(400).json({ error: "ID already in use" });
+
+  oldNote.noteId = newId.toLowerCase();
+  await oldNote.save();
+  res.status(200).json({ message: "Note renamed successfully", newId });
+});
+
+module.exports = router;
