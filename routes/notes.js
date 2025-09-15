@@ -1,95 +1,76 @@
 const express = require("express");
 const router = express.Router();
+const Note = require("../models/Note");
+const crypto = require("crypto");
 const fetch = require("node-fetch");
 
-const verifyTurnstile = async (token) => {
-  const secretKey = process.env.TURNSTILE_SECRET_KEY;
-  const url = `https://challenges.cloudflare.com/turnstile/v0/siteverify`;
-
+async function verifyTurnstile(token, ip) {
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret: secretKey, response: token }),
-    });
+    const formData = new FormData();
+    formData.append("secret", process.env.TURNSTILE_SECRET_KEY);
+    formData.append("response", token);
+    if (ip) formData.append("remoteip", ip);
+
+    const response = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
+
     const data = await response.json();
-    console.log("Turnstile response:", data);
+    console.log("Turnstile verify response:", data); // Log for debugging
     return data.success;
   } catch (error) {
     console.error("Turnstile verification error:", error);
     return false;
   }
-};
+}
 
-const notes = {};
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
 
-router.get("/:id", async (req, res) => {
-  const noteId = req.params.id.toLowerCase();
+router.get("/:noteId", async (req, res) => {
   const token = req.query["cf-turnstile-response"];
-
-  if (!token || !(await verifyTurnstile(token))) {
-    return res.status(403).send("Unauthorized");
+  if (!token || !(await verifyTurnstile(token, req.ip))) {
+    return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
-  if (notes[noteId]) {
-    res.json({
-      content: notes[noteId].content,
-      requiresPassword: notes[noteId].password !== undefined,
-    });
-  } else {
-    res.json({ content: "", requiresPassword: false });
+  const note = await Note.findOne({ noteId: req.params.noteId });
+  if (!note) return res.status(404).json({ error: "Note not found" });
+
+  const hasPassword = !!note.hashedPassword;
+  if (!hasPassword) {
+    const content = note.content;
+    delete notes[req.params.noteId];
+    return res.json({ content, hasPassword });
   }
+
+  res.json({ hasPassword });
 });
 
-router.post("/:id", async (req, res) => {
-  const noteId = req.params.id.toLowerCase();
+router.post("/api/notes/:noteId/verify", async (req, res) => {
   const token = req.body["cf-turnstile-response"];
-
-  if (!token || !(await verifyTurnstile(token))) {
-    return res.status(403).send("Unauthorized");
+  if (!token || !(await verifyTurnstile(token, req.ip))) {
+    return res.status(403).json({ error: "Invalid Turnstile token" });
   }
 
-  const { content, password } = req.body;
-  notes[noteId] = { content, password: password || undefined };
-  res.sendStatus(200);
-});
-
-router.post("/:id/set-password", async (req, res) => {
-  const noteId = req.params.id.toLowerCase();
-  const token = req.body["cf-turnstile-response"];
-
-  if (!token || !(await verifyTurnstile(token))) {
-    return res.status(403).send("Unauthorized");
-  }
+  const note = notes[req.params.noteId];
+  if (!note) return res.status(404).json({ error: "Note not found" });
 
   const { password } = req.body;
-  if (notes[noteId] && notes[noteId].password) {
-    return res.status(400).send("Password already set for this note");
+  const hashed = crypto.createHash("sha256").update(password).digest("hex");
+  if (hashed !== note.hashedPassword) {
+    return res.status(401).json({ error: "Invalid password" });
   }
-  if (notes[noteId]) {
-    notes[noteId].password = password;
-  } else {
-    notes[noteId] = { content: notes[noteId]?.content || "", password };
-  }
-  res.sendStatus(200);
+
+  // Self-destruct after successful verify
+  const content = note.content;
+  delete notes[req.params.noteId];
+  res.json({ content });
 });
 
-router.post("/:id/verify", async (req, res) => {
-  const noteId = req.params.id.toLowerCase();
-  const token = req.body["cf-turnstile-response"];
-
-  if (!token || !(await verifyTurnstile(token))) {
-    return res.status(403).send("Unauthorized");
-  }
-
-  const { password } = req.body;
-  if (!notes[noteId] || !notes[noteId].password) {
-    return res.status(400).send("No password set for this note");
-  }
-  if (notes[noteId].password !== password) {
-    return res.status(401).send("Incorrect password");
-  }
-  res.json({ content: notes[noteId].content });
-});
-
-module.exports = router;
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

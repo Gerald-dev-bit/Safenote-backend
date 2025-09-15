@@ -7,7 +7,9 @@ const noteSchema = new mongoose.Schema({
 });
 
 noteSchema.pre("save", function (next) {
-  if (this.noteId) this.noteId = this.noteId.toLowerCase();
+  if (this.noteId) {
+    this.noteId = this.noteId.toLowerCase();
+  }
   next();
 });
 
