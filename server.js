@@ -32,6 +32,8 @@ app.use(
   })
 );
 app.use((req, res, next) => {
+  console.log(`Received request: ${req.method} ${req.url}`);
+  console.log("Request headers:", req.headers);
   console.log(`CORS Origin allowed: ${req.headers.origin}`);
   next();
 });
