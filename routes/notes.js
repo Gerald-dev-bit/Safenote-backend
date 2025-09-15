@@ -1,7 +1,9 @@
+//routes/notes.js
 const express = require("express");
 const router = express.Router();
 const Note = require("../models/Note");
 const crypto = require("crypto");
+const fetch = require("node-fetch");
 
 async function verifyTurnstile(token) {
   if (!token) return false;
@@ -71,14 +73,14 @@ router.post("/:noteId", async (req, res) => {
       return res.status(403).json({ error: "CAPTCHA validation failed" });
     let note = await Note.findOne({ noteId: req.params.noteId });
     if (note) {
-      if (note.password && note.password !== hashPassword(password)) {
+      if (note.password && note.password !== hashPassword(password || "")) {
         return res.status(401).json({ error: "Invalid password" });
       }
-      note.content = content || "";
+      note.content = content;
       await note.save();
       return res.json({ message: "saved" });
     } else {
-      note = new Note({ noteId: req.params.noteId, content: content || "" });
+      note = new Note({ noteId: req.params.noteId, content });
       await note.save();
       res.json({ message: "created" });
     }
@@ -97,8 +99,6 @@ router.post("/:noteId/set-password", async (req, res) => {
     if (!note) return res.status(404).json({ error: "Note not found" });
     if (note.password)
       return res.status(400).json({ error: "Password already set" });
-    if (!password)
-      return res.status(400).json({ error: "Password is required" });
     note.password = hashPassword(password);
     await note.save();
     res.json({ message: "Password set" });
