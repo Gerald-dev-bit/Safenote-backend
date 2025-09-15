@@ -10,6 +10,7 @@ const notesRouter = require("./routes/notes");
 dotenv.config();
 
 const app = express();
+app.set("trust proxy", true);
 app.use(
   helmet({
     xFrameOptions: { action: "deny" }, // Keep X-Frame-Options, remove CSP as it's API-only
@@ -17,24 +18,31 @@ app.use(
 );
 app.use(morgan("combined"));
 app.use(express.json());
+
+// Enhanced CORS configuration
+const allowedOrigins = [
+  "http://localhost:5173",
+  "https://safenote-frontend.vercel.app",
+  "https://www.safenote.xyz",
+];
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "https://safenote-frontend.vercel.app",
-      "https://safenote.xyz",
-      "https://www.safenote.xyz",
-    ],
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "cf-turnstile-response"],
     credentials: true,
     optionsSuccessStatus: 200, // Some legacy browsers choke on 204
   })
 );
+
+// Single logging middleware with detailed output
 app.use((req, res, next) => {
-  console.log(`Received request: ${req.method} ${req.url}`);
-  console.log("Request headers:", req.headers);
-  console.log(`CORS Origin allowed: ${req.headers.origin}`);
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] Received request: ${req.method} ${req.url}`);
+  console.log(`[${timestamp}] Request headers:`, req.headers);
+  console.log(
+    `[${timestamp}] CORS Origin: ${req.headers.origin || "undefined"}`
+  );
   next();
 });
 
@@ -43,6 +51,7 @@ const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: "Too many requests from this IP, please try again later.",
+  keyGenerator: (req) => req.headers["cf-connecting-ip"] || req.ip,
 });
 
 // Stricter limiter for password-related routes
@@ -50,6 +59,7 @@ const passwordLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   message: "Too many password attempts from this IP, please try again later.",
+  keyGenerator: (req) => req.headers["cf-connecting-ip"] || req.ip,
 });
 
 app.use("/api/notes/:noteId", generalLimiter);
@@ -57,9 +67,31 @@ app.use("/api/notes/:noteId/verify", passwordLimiter);
 app.use("/api/notes/:noteId/set-password", passwordLimiter);
 app.use("/api/notes/:oldId/rename", generalLimiter);
 
-// Debug log for all requests
+// Fallback CORS handler for OPTIONS and undefined origin
 app.use((req, res, next) => {
-  console.log(`Received request: ${req.method} ${req.url}`);
+  const timestamp = new Date().toISOString();
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization,cf-turnstile-response"
+    );
+    res.header("Access-Control-Allow-Credentials", "true");
+  } else if (req.method === "OPTIONS") {
+    console.log(
+      `[${timestamp}] Handling OPTIONS preflight with no origin, allowing default`
+    );
+    res.header("Access-Control-Allow-Origin", allowedOrigins[0]); // Fallback for debugging
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization,cf-turnstile-response"
+    );
+    res.header("Access-Control-Allow-Credentials", "true");
+    return res.status(200).end();
+  }
   next();
 });
 
@@ -98,4 +130,6 @@ app.use((err, req, res, next) => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`)
+);
