@@ -22,13 +22,19 @@ app.use(
     origin: [
       "http://localhost:5173",
       "https://safenote-frontend.vercel.app",
+      "https://safenote.xyz",
       "https://www.safenote.xyz",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
+    optionsSuccessStatus: 200, // Some legacy browsers choke on 204
   })
 );
+app.use((req, res, next) => {
+  console.log(`CORS Origin allowed: ${req.headers.origin}`);
+  next();
+});
 
 // General rate limiting
 const generalLimiter = rateLimit({
