@@ -4,9 +4,31 @@ const Note = require("../models/Note");
 const crypto = require("crypto");
 const fetch = require("node-fetch");
 
+// async function verifyTurnstile(token) {
+//   if (!token) return false;
+//   const secret = process.env.TURNSTILE_SECRET_KEY;
+//   const urlencoded = new URLSearchParams();
+//   urlencoded.append("secret", secret);
+//   urlencoded.append("response", token);
+//   const res = await fetch(
+//     "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+//     {
+//       method: "POST",
+//       body: urlencoded,
+//       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+//     }
+//   );
+//   const data = await res.json();
+//   return data.success;
+// }
+
 async function verifyTurnstile(token) {
   if (!token) return false;
   const secret = process.env.TURNSTILE_SECRET_KEY;
+  console.log(
+    "Verifying Turnstile token with secret:",
+    secret ? "set" : "not set"
+  );
   const urlencoded = new URLSearchParams();
   urlencoded.append("secret", secret);
   urlencoded.append("response", token);
@@ -19,6 +41,7 @@ async function verifyTurnstile(token) {
     }
   );
   const data = await res.json();
+  console.log("Turnstile response:", data);
   return data.success;
 }
 
