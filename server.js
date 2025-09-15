@@ -6,6 +6,7 @@ const rateLimit = require("express-rate-limit");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const notesRouter = require("./routes/notes");
+const fetch = require("node-fetch");
 
 dotenv.config();
 
