@@ -10,17 +10,22 @@ async function verifyTurnstile(token) {
   const urlencoded = new URLSearchParams();
   urlencoded.append("secret", secret);
   urlencoded.append("response", token);
-  const res = await fetch(
-    "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-    {
-      method: "POST",
-      body: urlencoded,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    }
-  );
-  const data = await res.json();
-  console.log(`Turnstile verification response: ${JSON.stringify(data)}`);
-  return data.success;
+  try {
+    const res = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        body: urlencoded,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      }
+    );
+    const data = await res.json();
+    console.log(`Turnstile verification response: ${JSON.stringify(data)}`);
+    return data.success;
+  } catch (err) {
+    console.error("Error verifying Turnstile token:", err);
+    return false;
+  }
 }
 
 function hashPassword(password) {
