@@ -33,17 +33,6 @@ app.use(
     optionsSuccessStatus: 200,
   })
 );
-app.options("*", (req, res) => {
-  const origin = req.headers.origin;
-  res.header("Access-Control-Allow-Origin", origin || allowedOrigins[0]);
-  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type,Authorization,cf-turnstile-response"
-  );
-  res.header("Access-Control-Allow-Credentials", "true");
-  res.status(200).end();
-});
 
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
