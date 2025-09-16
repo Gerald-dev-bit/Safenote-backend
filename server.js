@@ -23,7 +23,6 @@ const allowedOrigins = [
   "http://localhost:5173",
   "https://safenote-frontend.vercel.app",
   "https://www.safenote.xyz",
-  "https://your-project.vercel.app", // Replace with your actual Vercel frontend URL
 ];
 app.use(
   cors({
@@ -45,6 +44,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// Use a custom key generator since ipKeyGenerator is from the utils subpath
 const getClientIp = (req) => req.headers["cf-connecting-ip"] || req.ip;
 
 const generalLimiter = rateLimit({
