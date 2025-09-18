@@ -65,6 +65,8 @@ app.use("/api/notes/:noteId", generalLimiter);
 app.use("/api/notes/:noteId/verify", passwordLimiter);
 app.use("/api/notes/:noteId/set-password", passwordLimiter);
 app.use("/api/notes/:oldId/rename", generalLimiter);
+// New: Rate limit Turnstile verification
+app.use("/api/verify-turnstile", generalLimiter);
 
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
@@ -87,7 +89,7 @@ const connectDB = async (retries = 5, delayMs = 5000) => {
 };
 connectDB();
 
-app.use("/api/notes", notesRouter);
+app.use("/api/notes", notesRouter); // Includes /verify-turnstile
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

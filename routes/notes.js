@@ -7,6 +7,36 @@ function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
 
+// New: Turnstile verification endpoint
+router.post("/verify-turnstile", async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: "Token required" });
+
+  try {
+    const verifyResponse = await fetch(
+      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          secret: process.env.TURNSTILE_SECRET_KEY,
+          response: token,
+        }),
+      }
+    );
+
+    const verifyData = await verifyResponse.json();
+    if (verifyData.success) {
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: "Verification failed" });
+    }
+  } catch (error) {
+    console.error("Turnstile verification error:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 router.get("/:noteId", async (req, res) => {
   let note = await Note.findOne({ noteId: req.params.noteId });
   if (!note) {
