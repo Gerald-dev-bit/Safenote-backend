@@ -23,6 +23,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "https://safenote-frontend.vercel.app",
   "https://www.safenote.xyz",
+  "https://safenote.xyz'",
 ];
 app.use(
   cors({
