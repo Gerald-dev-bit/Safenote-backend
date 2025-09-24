@@ -1,3 +1,4 @@
+//server.js
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
@@ -17,12 +18,15 @@ app.use(
   })
 );
 app.use(morgan("combined"));
-app.use(express.json());
+
+// Handle large payloads for notes (increased limit to 10MB)
+app.use(express.json({ limit: "10mb" }));
 
 const allowedOrigins = [
   "http://localhost:5173",
   "https://safenote-frontend.vercel.app",
   "https://www.safenote.xyz",
+  "https://safenote.xyz",
 ];
 app.use(
   cors({
