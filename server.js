@@ -1,4 +1,4 @@
-//server.js
+//server.js (full file with fix)
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv");
@@ -69,14 +69,42 @@ app.use("/api/notes/:noteId", generalLimiter);
 app.use("/api/notes/:noteId/verify", passwordLimiter);
 app.use("/api/notes/:noteId/set-password", passwordLimiter);
 app.use("/api/notes/:oldId/rename", generalLimiter);
-// New: Rate limit Turnstile verification
-app.use("/api/verify-turnstile", generalLimiter);
+// New: Rate limit Turnstile verification (tightened to 5/min for abuse prevention)
+app.use(
+  "/api/verify-turnstile",
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    message:
+      "Too many verification attempts from this IP, please try again later.",
+    keyGenerator: (req) => getClientIp(req),
+  })
+);
+
+// New: Health endpoint for warm-up (simple DB ping)
+app.get("/health", async (req, res) => {
+  console.time("health-db-ping");
+  try {
+    // Minimal query to warm DB connection
+    await mongoose.connection.db.admin().ping();
+    console.timeEnd("health-db-ping");
+    res.status(200).json({ status: "healthy" });
+  } catch (err) {
+    console.error("Health check failed:", err);
+    res.status(500).json({ status: "unhealthy" });
+  }
+});
 
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
     try {
+      // Fixed: Removed bufferMaxEntries (unsupported by driver); kept bufferCommands: false for Mongoose buffering disable
+      // Optimized for serverless: Limit pool to 1 connection (avoids leaks on Vercel)
       await mongoose.connect(process.env.MONGO_URI, {
         serverSelectionTimeoutMS: 5000,
+        bufferCommands: false, // Disable Mongoose buffering
+        minPoolSize: 1,
+        maxPoolSize: 1, // Single connection for serverless efficiency
       });
       console.log("MongoDB connected");
       return;

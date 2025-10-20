@@ -1,3 +1,4 @@
+//models/Note.js (No changes needed; index already present)
 const mongoose = require("mongoose");
 
 const noteSchema = new mongoose.Schema({
