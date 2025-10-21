@@ -48,6 +48,46 @@ app.use((req, res, next) => {
   next();
 });
 
+// New: Global traffic rate limiter using Upstash (tracks all /api/* requests) - Dynamic import for ESM
+let trafficLimiter = null;
+(async () => {
+  try {
+    const { Redis } = await import("@upstash/redis");
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    trafficLimiter = new Ratelimit({
+      redis: redis,
+      limiter: Ratelimit.slidingWindow(100, "60 s"), // 100 req/min global threshold
+      prefix: "@upstash/ratelimit/traffic",
+    });
+    console.log("Upstash Ratelimit initialized");
+  } catch (error) {
+    console.error("Failed to initialize Upstash:", error);
+    // Fallback: Disable high-traffic detection
+  }
+})();
+
+// Middleware to apply global limiter to /api/* (with fallback if not initialized)
+app.use("/api", async (req, res, next) => {
+  if (!trafficLimiter) {
+    return next(); // Skip if not initialized
+  }
+  try {
+    const { success } = await trafficLimiter.consume(req.ip);
+    if (!success) {
+      return res
+        .status(429)
+        .json({ error: "High traffic - too many requests" });
+    }
+  } catch (error) {
+    console.error("Ratelimit error:", error);
+  }
+  next();
+});
+
 // Use a custom key generator since ipKeyGenerator is from the utils subpath
 const getClientIp = (req) => req.headers["cf-connecting-ip"] || req.ip;
 

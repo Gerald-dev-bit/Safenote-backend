@@ -4,9 +4,46 @@ const router = express.Router();
 const Note = require("../models/Note");
 const crypto = require("crypto");
 
+// New: Dynamic import for Upstash (ESM-only)
+let trafficLimiter = null;
+(async () => {
+  try {
+    const { Redis } = await import("@upstash/redis");
+    const { Ratelimit } = await import("@upstash/ratelimit");
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+    trafficLimiter = new Ratelimit({
+      redis: redis,
+      limiter: Ratelimit.slidingWindow(100, "60 s"), // Same as global
+      prefix: "@upstash/ratelimit/traffic",
+    });
+    console.log("Upstash Ratelimit initialized in routes");
+  } catch (error) {
+    console.error("Failed to initialize Upstash in routes:", error);
+  }
+})();
+
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
 }
+
+// New: Traffic status endpoint - checks if under high load
+router.get("/traffic-status", async (req, res) => {
+  if (!trafficLimiter) {
+    return res.json({ high: false }); // Fallback to low if not initialized
+  }
+  try {
+    const { remaining } = await trafficLimiter.getRemaining(req.ip || "global"); // Fixed: Use .getRemaining() instead of .get()
+    const highTraffic = remaining < 50; // Threshold: if <50 remaining in window, high traffic
+    res.json({ high: highTraffic });
+  } catch (error) {
+    console.error("Traffic status error:", error);
+    // Optional: Change to 200 status for fallback (avoids 500 on transient errors)
+    res.status(200).json({ high: false }); // Changed from 500 to 200
+  }
+});
 
 // New: Turnstile verification endpoint (optimized with timeout)
 router.post("/verify-turnstile", async (req, res) => {
