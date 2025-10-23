@@ -48,36 +48,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// New: Global traffic rate limiter using Upstash (tracks all /api/* requests) - Dynamic import for ESM
+// Fix: Sync Upstash init (fail-fast, no async wrapper)
 let trafficLimiter = null;
-(async () => {
-  try {
-    const { Redis } = await import("@upstash/redis");
-    const { Ratelimit } = await import("@upstash/ratelimit");
-    const redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    trafficLimiter = new Ratelimit({
-      redis: redis,
-      limiter: Ratelimit.slidingWindow(100, "60 s"), // 100 req/min global threshold
-      prefix: "@upstash/ratelimit/traffic",
-    });
-    console.log("Upstash Ratelimit initialized");
-  } catch (error) {
-    console.error("Failed to initialize Upstash:", error);
-    // Fallback: Disable high-traffic detection
-  }
-})();
+try {
+  const { Redis } = require("@upstash/redis");
+  const { Ratelimit } = require("@upstash/ratelimit");
+  const redis = new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  });
+  trafficLimiter = new Ratelimit({
+    redis: redis,
+    limiter: Ratelimit.slidingWindow(50, "60 s"), // Fix: Lower to 50/min global threshold (tighter for high traffic detection)
+    prefix: "@upstash/ratelimit/traffic",
+  });
+  console.log("Upstash Ratelimit initialized");
+} catch (error) {
+  console.error("Failed to initialize Upstash:", error);
+  trafficLimiter = null; // Explicit null on fail
+}
 
 // Middleware to apply global limiter to /api/* (with fallback if not initialized)
 app.use("/api", async (req, res, next) => {
   if (!trafficLimiter) {
-    return next(); // Skip if not initialized
+    console.warn("No traffic limiter - skipping"); // Fix: Log for debugging
+    return next();
   }
   try {
-    const { success } = await trafficLimiter.consume(req.ip);
+    const { success } = await trafficLimiter.limit(req.ip);
     if (!success) {
+      console.warn(`Rate limited IP: ${req.ip}`); // Fix: Log blocked
       return res
         .status(429)
         .json({ error: "High traffic - too many requests" });

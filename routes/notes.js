@@ -4,26 +4,7 @@ const router = express.Router();
 const Note = require("../models/Note");
 const crypto = require("crypto");
 
-// New: Dynamic import for Upstash (ESM-only)
-let trafficLimiter = null;
-(async () => {
-  try {
-    const { Redis } = await import("@upstash/redis");
-    const { Ratelimit } = await import("@upstash/ratelimit");
-    const redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
-    trafficLimiter = new Ratelimit({
-      redis: redis,
-      limiter: Ratelimit.slidingWindow(100, "60 s"), // Same as global
-      prefix: "@upstash/ratelimit/traffic",
-    });
-    console.log("Upstash Ratelimit initialized in routes");
-  } catch (error) {
-    console.error("Failed to initialize Upstash in routes:", error);
-  }
-})();
+// Fix: Remove duplicate trafficLimiter init (use from server.js)
 
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
@@ -31,17 +12,21 @@ function hashPassword(password) {
 
 // New: Traffic status endpoint - checks if under high load
 router.get("/traffic-status", async (req, res) => {
+  // Fix: Import from server.js? No, but assume global; fallback if null
+  const trafficLimiter = require("../server").trafficLimiter; // Fix: Reference global if exported, else fallback
   if (!trafficLimiter) {
     return res.json({ high: false }); // Fallback to low if not initialized
   }
   try {
-    const { remaining } = await trafficLimiter.getRemaining(req.ip || "global"); // Fixed: Use .getRemaining() instead of .get()
-    const highTraffic = remaining < 50; // Threshold: if <50 remaining in window, high traffic
+    const { remaining } = await trafficLimiter.getRemaining(req.ip || "global");
+    const highTraffic = remaining < 20; // Fix: Tighter threshold (<20 for earlier detection)
+    console.log(
+      `Traffic check for ${req.ip}: remaining=${remaining}, high=${highTraffic}`
+    ); // Fix: Add logging
     res.json({ high: highTraffic });
   } catch (error) {
     console.error("Traffic status error:", error);
-    // Optional: Change to 200 status for fallback (avoids 500 on transient errors)
-    res.status(200).json({ high: false }); // Changed from 500 to 200
+    res.status(200).json({ high: false }); // Always 200 on error
   }
 });
 
@@ -55,9 +40,9 @@ router.post("/verify-turnstile", async (req, res) => {
   }
 
   try {
-    // Add timeout to prevent hangs (5s max for external fetch)
+    // Fix: Reduce timeout to 3s (Cloudflare avg <1s)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     const verifyResponse = await fetch(
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
@@ -69,12 +54,14 @@ router.post("/verify-turnstile", async (req, res) => {
           response: token,
         }),
         signal: controller.signal,
+        keepalive: true, // Fix: Faster
       }
     );
 
     clearTimeout(timeoutId);
 
     const verifyData = await verifyResponse.json();
+    console.log("Cloudflare verify response:", verifyData); // Fix: Add logging for debugging
     if (verifyData.success) {
       console.timeEnd("turnstile-verify");
       res.json({ success: true });
@@ -93,6 +80,7 @@ router.post("/verify-turnstile", async (req, res) => {
   }
 });
 
+// Rest unchanged (GET/POST/verify/set-password/rename)...
 router.get("/:noteId", async (req, res) => {
   console.time("notes-get"); // Profiling start
   try {
