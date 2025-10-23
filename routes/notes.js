@@ -82,14 +82,14 @@ router.post("/verify-turnstile", async (req, res) => {
 router.get("/:noteId", async (req, res) => {
   console.time("notes-get"); // Profiling start
   try {
-    // Optimized: Use lean() for faster read (no hydration)
-    let note = await Note.findOne({ noteId: req.params.noteId }).lean();
-    if (!note) {
-      // Idempotent: Create empty note on GET
-      note = new Note({ noteId: req.params.noteId, content: "" });
-      await note.save();
-      // Re-fetch lean version
-      note = await Note.findOne({ noteId: req.params.noteId }).lean();
+    let noteDoc = await Note.findOne({ noteId: req.params.noteId });
+    let note;
+    if (!noteDoc) {
+      noteDoc = new Note({ noteId: req.params.noteId, content: "" });
+      await noteDoc.save();
+      note = noteDoc.toObject();
+    } else {
+      note = noteDoc.toObject();
     }
 
     const requiresPassword = !!note.password;
@@ -110,12 +110,13 @@ router.get("/:noteId", async (req, res) => {
 router.post("/:noteId", async (req, res) => {
   console.time("notes-post"); // Profiling start
   try {
-    let note = await Note.findOne({ noteId: req.params.noteId }).lean();
-    if (!note) {
-      note = new Note({ noteId: req.params.noteId });
-      await note.save();
+    let noteDoc = await Note.findOne({ noteId: req.params.noteId });
+    if (!noteDoc) {
+      noteDoc = new Note({ noteId: req.params.noteId });
+      await noteDoc.save();
     }
 
+    const note = noteDoc.toObject();
     const { content, password } = req.body;
 
     if (note.password) {
@@ -125,10 +126,8 @@ router.post("/:noteId", async (req, res) => {
       }
     }
 
-    // Update (fetch full doc for save)
-    note = await Note.findOne({ noteId: req.params.noteId });
-    note.content = content || "";
-    await note.save();
+    noteDoc.content = content || "";
+    await noteDoc.save();
 
     console.timeEnd("notes-post");
     res.json({ message: "Note saved successfully" });
@@ -180,12 +179,13 @@ router.post("/:noteId/verify", async (req, res) => {
 router.post("/:noteId/set-password", async (req, res) => {
   console.time("notes-set-password"); // Profiling start
   try {
-    let note = await Note.findOne({ noteId: req.params.noteId }).lean();
-    if (!note) {
-      note = new Note({ noteId: req.params.noteId });
-      await note.save();
+    let noteDoc = await Note.findOne({ noteId: req.params.noteId });
+    if (!noteDoc) {
+      noteDoc = new Note({ noteId: req.params.noteId });
+      await noteDoc.save();
     }
 
+    const note = noteDoc.toObject();
     const { password } = req.body;
     if (!password) {
       console.timeEnd("notes-set-password");
@@ -197,10 +197,8 @@ router.post("/:noteId/set-password", async (req, res) => {
       return res.status(400).json({ error: "Password already set" });
     }
 
-    // Update (fetch full doc for save)
-    note = await Note.findOne({ noteId: req.params.noteId });
-    note.password = hashPassword(password);
-    await note.save();
+    noteDoc.password = hashPassword(password);
+    await noteDoc.save();
 
     console.timeEnd("notes-set-password");
     res.status(200).json({ message: "Password set successfully" });
