@@ -4,7 +4,8 @@ const router = express.Router();
 const Note = require("../models/Note");
 const crypto = require("crypto");
 
-// Fix: Remove duplicate trafficLimiter init (use from server.js)
+// Global trafficLimiter reference (from server.js - assume exported or global)
+let trafficLimiter = null; // Will be set in server.js
 
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
@@ -12,17 +13,15 @@ function hashPassword(password) {
 
 // New: Traffic status endpoint - checks if under high load
 router.get("/traffic-status", async (req, res) => {
-  // Fix: Import from server.js? No, but assume global; fallback if null
-  const trafficLimiter = require("../server").trafficLimiter; // Fix: Reference global if exported, else fallback
   if (!trafficLimiter) {
     return res.json({ high: false }); // Fallback to low if not initialized
   }
   try {
     const { remaining } = await trafficLimiter.getRemaining(req.ip || "global");
-    const highTraffic = remaining < 20; // Fix: Tighter threshold (<20 for earlier detection)
+    const highTraffic = remaining < 20; // Tighter threshold (<20 for earlier detection)
     console.log(
       `Traffic check for ${req.ip}: remaining=${remaining}, high=${highTraffic}`
-    ); // Fix: Add logging
+    ); // Add logging
     res.json({ high: highTraffic });
   } catch (error) {
     console.error("Traffic status error:", error);
@@ -40,7 +39,7 @@ router.post("/verify-turnstile", async (req, res) => {
   }
 
   try {
-    // Fix: Reduce timeout to 3s (Cloudflare avg <1s)
+    // Reduce timeout to 3s (Cloudflare avg <1s)
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
@@ -54,14 +53,14 @@ router.post("/verify-turnstile", async (req, res) => {
           response: token,
         }),
         signal: controller.signal,
-        keepalive: true, // Fix: Faster
+        keepalive: true, // Faster
       }
     );
 
     clearTimeout(timeoutId);
 
     const verifyData = await verifyResponse.json();
-    console.log("Cloudflare verify response:", verifyData); // Fix: Add logging for debugging
+    console.log("Cloudflare verify response:", verifyData); // Add logging for debugging
     if (verifyData.success) {
       console.timeEnd("turnstile-verify");
       res.json({ success: true });
@@ -80,7 +79,6 @@ router.post("/verify-turnstile", async (req, res) => {
   }
 });
 
-// Rest unchanged (GET/POST/verify/set-password/rename)...
 router.get("/:noteId", async (req, res) => {
   console.time("notes-get"); // Profiling start
   try {
@@ -144,8 +142,15 @@ router.post("/:noteId", async (req, res) => {
 router.post("/:noteId/verify", async (req, res) => {
   console.time("notes-verify"); // Profiling start
   try {
-    // Optimized: Use lean() for faster read
-    const note = await Note.findOne({ noteId: req.params.noteId }).lean();
+    // Enhanced try-catch for DB errors (prevents 502)
+    let note;
+    try {
+      // Optimized: Use lean() for faster read
+      note = await Note.findOne({ noteId: req.params.noteId }).lean();
+    } catch (dbErr) {
+      console.error("DB query error in verify:", dbErr);
+      throw new Error("Database connection failed");
+    }
     if (!note) {
       console.timeEnd("notes-verify");
       return res.status(404).json({ error: "Note not found" });

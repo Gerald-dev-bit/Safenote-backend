@@ -28,23 +28,31 @@ const allowedOrigins = [
   "https://www.safenote.xyz",
   "https://safenote.xyz",
 ];
-app.use(
-  cors({
-    origin: allowedOrigins,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-    optionsSuccessStatus: 200,
-  })
-);
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Explicit OPTIONS
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+  optionsSuccessStatus: 200,
+};
+
+// Fix: Apply CORS globally, then explicit OPTIONS handler first (before other middleware/routes)
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // Fix: Explicit preflight handler for Vercel serverless
 
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] Received request: ${req.method} ${req.url}`);
   console.log(`[${timestamp}] Request headers:`, req.headers);
   console.log(
-    `[${timestamp}] CORS Origin: ${req.headers.origin || "undefined"}`
+    `[${timestamp}] CORS Origin: ${
+      req.headers.origin || "undefined"
+    } (Method: ${req.method})`
   );
+  // Fix: Log preflight specifically
+  if (req.method === "OPTIONS") {
+    console.log(`[${timestamp}] Handling OPTIONS preflight for ${req.url}`);
+  }
   next();
 });
 
@@ -59,7 +67,7 @@ try {
   });
   trafficLimiter = new Ratelimit({
     redis: redis,
-    limiter: Ratelimit.slidingWindow(50, "60 s"), // Fix: Lower to 50/min global threshold (tighter for high traffic detection)
+    limiter: Ratelimit.slidingWindow(50, "60 s"), // Lower to 50/min global threshold (tighter for high traffic detection)
     prefix: "@upstash/ratelimit/traffic",
   });
   console.log("Upstash Ratelimit initialized");
@@ -71,15 +79,16 @@ try {
 // Middleware to apply global limiter to /api/* (with fallback if not initialized)
 app.use("/api", async (req, res, next) => {
   if (!trafficLimiter) {
-    console.warn("No traffic limiter - skipping"); // Fix: Log for debugging
+    console.warn("No traffic limiter - skipping");
     return next();
   }
   try {
     const { success } = await trafficLimiter.limit(req.ip);
     if (!success) {
-      console.warn(`Rate limited IP: ${req.ip}`); // Fix: Log blocked
+      console.warn(`Rate limited IP: ${req.ip}`);
       return res
         .status(429)
+        .set("Access-Control-Allow-Origin", req.headers.origin) // Fix: Ensure CORS on error responses
         .json({ error: "High traffic - too many requests" });
     }
   } catch (error) {
@@ -138,7 +147,6 @@ app.get("/health", async (req, res) => {
 const connectDB = async (retries = 5, delayMs = 5000) => {
   while (retries > 0) {
     try {
-      // Fixed: Removed bufferMaxEntries (unsupported by driver); kept bufferCommands: false for Mongoose buffering disable
       // Optimized for serverless: Limit pool to 1 connection (avoids leaks on Vercel)
       await mongoose.connect(process.env.MONGO_URI, {
         serverSelectionTimeoutMS: 5000,
@@ -163,11 +171,15 @@ connectDB();
 
 app.use("/api/notes", notesRouter); // Includes /verify-turnstile
 
+// Fix: Enhanced global error handler - ensure CORS headers on all errors (prevents 502 header loss)
 app.use((err, req, res, next) => {
   console.error(err.stack);
   const isDev = process.env.NODE_ENV === "development";
   res
     .status(500)
+    .set("Access-Control-Allow-Origin", req.headers.origin || "*") // Fix: Force CORS on errors
+    .set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+    .set("Access-Control-Allow-Headers", "Content-Type, Authorization")
     .json({ error: isDev ? err.message : "Internal server error" });
 });
 
